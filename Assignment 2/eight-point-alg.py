@@ -3,14 +3,9 @@ import cv2 as cv
 from keypoint_matching import sift_algorithm
 from matplotlib import pyplot as plt
 import seaborn as sns
-
-# img1 = cv.imread('Data/frame00000001.png')
-# img2 = cv.imread('Data/frame00000002.png')
-
-# img1 = cv.cvtColor(img1, cv.COLOR_RGB2GRAY)
-# img2 = cv.cvtColor(img2, cv.COLOR_RGB2GRAY)
-# kp1, kp2, matches = sift_algorithm(img1, img2)
-
+import open3d as o3d
+from scipy.spatial import procrustes 
+from scipy.linalg import orthogonal_procrustes
 
 def eightpoint(matches,  kp1, kp2,T = None, T_accent = None):
 
@@ -67,9 +62,6 @@ def normalized_eightpoint(matches, kp1, kp2):
         y_accent = kp2[trainid_accent].pt[1]
         all_points[i, :] = [x, y, x_accent, y_accent]
 
-    
-    #all_x = np.concatenate((all_points[:,0].reshape((n_matches,1)), all_points[:,2].reshape((n_matches,1))))
-    #all_y = np.concatenate((all_points[:,1].reshape((n_matches,1)), all_points[:,3].reshape((n_matches,1))))
     mean_x = np.mean(all_points[:,0])
     mean_y = np.mean(all_points[:,1])
     d =  np.mean(np.sqrt(np.power((all_points[:,0]-mean_x),2) + np.power((all_points[:,1]-mean_y),2)))
@@ -101,7 +93,7 @@ def normalized_eightpoint(matches, kp1, kp2):
 def eightpointRANSAC(matches, T, T_accent, kp1, kp2):
     iteration = 0
     best_inliers = 0
-    max_iterations = 169
+    max_iterations = 100
     best_f = None
     while iteration < max_iterations:
         A = np.ones((8,9))
@@ -142,11 +134,8 @@ def eightpointRANSAC(matches, T, T_accent, kp1, kp2):
 
         new_f = Uf @ new_Df @ Vft
 
-        #new_f = T_accent.T @ new_f @ T
-
         amount_of_inliers, indices = Sampson_dist(new_f, matches, T, T_accent, kp1, kp2)
-        
-        #print(amount_of_inliers)
+    
 
         if amount_of_inliers > best_inliers:
             best_inliers = amount_of_inliers
@@ -154,8 +143,7 @@ def eightpointRANSAC(matches, T, T_accent, kp1, kp2):
             best_indices = indices
 
         iteration += 1
-        #print(iteration)
-    
+
     best_matches = []
     for i in best_indices:
         best_matches.append(matches[i])
@@ -163,15 +151,6 @@ def eightpointRANSAC(matches, T, T_accent, kp1, kp2):
     best_f = eightpoint(best_matches,kp1, kp2, T, T_accent )
         
     return best_f, best_inliers, best_matches
-
-# def sampson_distance(kpt1, kpt2, F_hat_prime):
-# #     print(kpt1, kpt1.shape, kpt2, kpt2.shape)
-#     d = np.power(kpt2 @ F_hat_prime @ kpt1, 2)
-#     sqr_kpt1 = np.power(F_hat_prime @ kpt1, 2)
-#     sqr_kpt2 = np.power(F_hat_prime.T @ kpt2, 2)
-#     d /= (sqr_kpt1[0] + sqr_kpt1[1] + sqr_kpt2[0] + sqr_kpt2[1])
-#     return d        
-
 
 def Sampson_dist(f, matches, T, T_accent, kp1, kp2):
     inliers = 0
@@ -195,14 +174,10 @@ def Sampson_dist(f, matches, T, T_accent, kp1, kp2):
 
         temp1 = f @ p 
         temp2 = f.T @ p_prime
-        ### Misschien kapot
         denominator =  temp1[0]**2 + temp1[1]**2 + temp2[0]**2 + temp2[1]**2 
 
         d = nomininator /denominator
-       # d = sampson_distance(p, p_prime, f)
-        #breakpoint()
-        #print(d)
-        if d < 0.1:
+        if d < 1:
             inliers += 1
             indices.append(i)
     return inliers, indices
@@ -223,43 +198,22 @@ def drawlines(img1,img2,lines,pts1,pts2):
         img2 = cv.circle(img2,tuple(pt2),5,color,-1)
     return img1,img2
 
-def get_coordinates(matches):
-    x_array  = []
-    y_array = []
-    x_prime_array = []
-    y_prime_array = []
-    for match in matches:
-        trainid = match.queryIdx
-        trainid_accent = match.trainIdx
-        x = kp1[trainid].pt[0]
-        y = kp1[trainid].pt[1]
-
-        x_accent = kp2[trainid_accent].pt[0]
-        y_accent = kp2[trainid_accent].pt[1]
-
-        x_array.append(x)
-        y_array.append(y)
-        x_prime_array.append(x_accent)
-        y_prime_array.append(y_accent)
-
-    return np.array(x_array), np.array(y_array), np.array(x_prime_array), np.array(y_prime_array)
-
-
-
-
 def make_epipolar():
+#### Code partly from: https://docs.opencv.org/3.4/da/de9/tutorial_py_epipolar_geometry.html
 
-    num1 = 1
+    num1 = 0
     num2 = 8
 
-    img1 = cv.imread('Data/frame0000000{}.png'.format(num1))
-    img2 = cv.imread('Data/frame0000000{}.png'.format(num2))
+    img1 = cv.imread('Data/frame00000001.png')
+    img2 = cv.imread('Data/frame00000020.png')
         
     img1 = cv.cvtColor(img1, cv.COLOR_RGB2GRAY)
     img2 = cv.cvtColor(img2, cv.COLOR_RGB2GRAY)
 
         # Keypoint matching
     kp1, kp2, matches = sift_algorithm(img1, img2)
+
+    ### Comment below lines to switch between, 8-point, norm-8-point and Norm-Ransac
 
     T, T_accent = normalized_eightpoint(matches, kp1, kp2)
     #f = eightpoint(matches,kp1,kp2, T, T_accent )
@@ -270,7 +224,6 @@ def make_epipolar():
     pts2 = []
 
     for i, m in enumerate(matches):
-    #breakpoint()
         pts2.append(kp2[m.trainIdx].pt)
         pts1.append(kp1[m.queryIdx].pt)
 
@@ -289,16 +242,24 @@ def make_epipolar():
     lines2 = lines2.reshape(-1,3)
     img3,img4 = drawlines(img2,img1,lines2,pts2,pts1)
 
+   
     plt.subplot(121),plt.imshow(img5)
     plt.subplot(122),plt.imshow(img3)
     plt.show()
     return None
 
-def construct_PVM(RANSAC = True):
+
+
+###Function to plot epipolar lines
+
+#make_epipolar()
+
+def construct_PVM(RANSAC = True, threshold=1):
 
     matched_dictionary = {}
     PVM_matrix = None
     M = 49
+
 
     for i in range(M-1):
 
@@ -333,7 +294,6 @@ def construct_PVM(RANSAC = True):
 
         if type(PVM_matrix) == type(None):
 
-            # fill matched dictionary for the first time
             k = 0
             for match in matches:
                 trainid = match.queryIdx
@@ -348,6 +308,7 @@ def construct_PVM(RANSAC = True):
                     matched_dictionary[(x, y)] = k
                     k += 1
 
+
             PVM_matrix = np.zeros((M * 2, len(matched_dictionary.keys())))
 
         for j, match in enumerate(matches):
@@ -359,43 +320,44 @@ def construct_PVM(RANSAC = True):
             x_accent = kp2[trainid_accent].pt[0]
             y_accent = kp2[trainid_accent].pt[1]
 
-            # Voeg toe voor bestaande keypoint
-            if ((int(x), int(y)) in matched_dictionary.keys()) and ((int(x), int(y)) not in new_dictionary.keys()):
-                # voeg toe aan bestaande column
-                # breakpoint()
-                # print(x_accent, y_accent, '\n')
-                PVM_matrix[2*i,matched_dictionary[(x,y)]] = x_accent
-                PVM_matrix[2*i+1,matched_dictionary[(x,y)]] = y_accent
-                #voeg toe aan dict
-                new_dictionary[(int(x_accent),int(y_accent))] = matched_dictionary[(int(x),int(y))]
+            added = False
+           
+            for point in matched_dictionary.keys():
 
-            elif (x, y) not in new_dictionary.keys():
-                # column padden
+                distance = np.sqrt((point[0]-x)**2 + (point[1] - y)**2 )
+                if distance < threshold:
+                    PVM_matrix[2*i,matched_dictionary[point]] = x_accent
+                    PVM_matrix[2*i+1,matched_dictionary[point]] = y_accent
+                    new_dictionary[(x_accent,y_accent)] = matched_dictionary[point]
+                    added = True
+                    break
+
+            if not added:
                 PVM_matrix = np.hstack((PVM_matrix, np.zeros((M*2,1))))
-                # waarde toevoegen
                 PVM_matrix[2*i,-1] = x_accent
                 PVM_matrix[2*i+1,-1] = y_accent
-                new_dictionary[(int(x_accent),int(y_accent))] = PVM_matrix.shape[1] - 1
+                new_dictionary[(x_accent,y_accent)] = PVM_matrix.shape[1] - 1
 
         print('PVM size: {}, matched_dictionary size: {}, new_dictionary size: {}'.format(PVM_matrix.shape, len(matched_dictionary.values()), len(new_dictionary.keys())))
         matched_dictionary = new_dictionary
-        # breakpoint()
 
     return PVM_matrix
 
-#make_epipolar()
 
-def visualize_matrix(PVM):
-    PVM[PVM > 0 ] = 1
-   
-    sns.heatmap(PVM, vmin=0, vmax=1, cmap='cividis', center=1) 
-    plt.show()
+def visualize_matrix(PVM, iets = False):
+    if iets:
+        sns.heatmap(PVM, vmin=0, vmax=2, cmap='cividis', center=1) 
+        plt.show() 
+    else:
+        PVM[PVM > 0 ] = 1
+        sns.heatmap(PVM, vmin=0, vmax=1, cmap='cividis', center=1) 
+        plt.show()
 
 
 def densify(PVM):
-    bool_PVM = PVM
+    bool_PVM = np.copy(PVM)
     bool_PVM[bool_PVM > 0 ] = 1
-    treshold = 20
+    treshold = 10
     dense_PVM = None
     for i in range(bool_PVM.shape[1]):
         if sum (bool_PVM[:,i]) > treshold:
@@ -406,21 +368,127 @@ def densify(PVM):
                 column = PVM[:,i]
                 column = np.reshape(column, (column.shape[0],1))
                 dense_PVM = np.hstack((dense_PVM, column))
-    breakpoint()
-    visualize_matrix(dense_PVM)
+    return dense_PVM
 
-def getBlock(PVM):
-    bool_pvm = PVM
+def getBlocks(PVM):
+    bool_PVM = np.copy(PVM)
     bool_PVM[bool_PVM > 0 ] = 1
+    visualize_matrixx = np.copy(bool_PVM)
 
-    for i in range()
+    blocks = []
+
+    images = 4
+    for i in range(0,PVM.shape[0]-images*2,2):
+
+        right = 0
+        left = 0
+        for k in reversed(range(0, PVM.shape[1])):
+           # print(k)
+            if bool_PVM[i,k] == 1  and right == 0:
+                right = k
+    
+            if (right != 0) and (bool_PVM[i+images*2,k] == 0):
+                left =  k+1
+                break
+
+        j = i + 2
+        
+        block = PVM[i:i+images*2,left:right]
+        blocks.append(block)
+    
+    return blocks
+
             
 
-PVM_matrix = construct_PVM(True)
-visualize_matrix(PVM_matrix)
-densify(PVM_matrix)
 
+### Code to construct a new PVM or load an old one
+
+
+#PVM_matrix = construct_PVM(True, threshold = 1)
+#PVM_matrix.dump("dense_matrix_with_threshold1andAkaze")
+#breakpoint()
+PVM_matrix = np.load("dense_matrix_with_threshold1", allow_pickle=True)
+#PVM_matrix = np.loadtxt("PointViewMatrix.txt")
+#breakpoint()
+#visualize_matrix(PVM_matrix)
+PVM_matrix = densify(PVM_matrix)
+#visualize_matrix(PVM_matrix)
+
+
+def getblock_full_dense(PVM):
+    blocks = []
+    blocks.append(PVM[:6,:6])
+    for i in range(6,PVM.shape[1], 20):
+            blocks.append(PVM[:i+2, :i+2])
     
+    return blocks
+
+
+def struct_from_moti(block):
+    row_means = block.mean(1)
+    block = block - row_means.reshape((-1,1))
+
+    U, W, Vt = np.linalg.svd(block)
+
+    U3 = U[:,:3]
+    W3 = np.diag(W[:3])
+    V3t = Vt[:3,:]
+
+    M = U3 @ np.sqrt(W3)
+    S = (np.sqrt(W3) @ V3t).T
+
+    return S, M
+
+
+### Uncomment the second function if you want to find blocks in the given PVM.txt
+
+blocks = getBlocks(PVM_matrix)
+#blocks = getblock_full_dense(PVM_matrix)
+
+
+def stitch(blocks):
+    final_points = None
+    for i, block in enumerate(blocks[:-1]):
+        if i == 2:
+            break
+        S, M = struct_from_moti(block)
+        if type(final_points) == type(None):
+            final_points = S
+            intermediate = S
+        else:
+            end_common_x = block_prev[-2,-1]
+            end_common_y = block_prev[-1,-1]
+            finalk = None
+            for j, row in enumerate(block):
+                for k,value in enumerate(row):
+                    if value == end_common_y and block[j-1,k] == end_common_x:
+                        finalk = k
+                        break
+                if finalk != None:
+                    break
+            if finalk == None:
+                continue
+
+            R, s = orthogonal_procrustes(S[:finalk], intermediate[-finalk:])
+            intermediate = S
+            tempiets = np.dot(S,R) * s
+            final_points = np.vstack((final_points,tempiets))
+
+        block_prev = block
+
+    return final_points
+
+### Using the PVM, create blocks and visualize the point cloud after stitching
+
+
+final_point_cloud = stitch(blocks)
+vis_pcd = o3d.geometry.PointCloud()
+vis_pcd.points = o3d.utility.Vector3dVector(final_point_cloud)
+o3d.visualization.draw_geometries([vis_pcd])
+
+
+
+
 
 
 

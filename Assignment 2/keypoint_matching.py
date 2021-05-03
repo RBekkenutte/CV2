@@ -17,11 +17,18 @@ def sift_algorithm(img1, img2):
     #gray2 = cv.cvtColor(img2, cv.COLOR_RGB2GRAY)
 
     # Initiate SIFT detector
-    sift = cv.SIFT_create()
+    #sift = cv.SIFT_create()
+    
+    akaze = cv.AKAZE_create()
 
     # find the keypoints and descriptors with SIFT
-    kp1, des1 = sift.detectAndCompute(img1, None)
-    kp2, des2 = sift.detectAndCompute(img2, None)
+    #kp1, des1 = sift.detectAndCompute(img1, None)
+    #kp2, des2 = sift.detectAndCompute(img2, None)
+
+    kp1, des1 = akaze.detectAndCompute(img1, None)
+    kp2, des2 = akaze.detectAndCompute(img2, None)
+
+
 
     #If we want to insert keypoints
     # img1 = cv.drawKeypoints(gray1, kp1, img1, flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
@@ -59,9 +66,11 @@ def plot_matching(img1, img2):
         random_subset.append([matches[i]])
 
     #Plot the matches
-    img3 = cv.drawMatchesKnn(img1,kp1,img2,kp2,random_subset,None,flags=cv.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+    img4 = cv.drawMatchesKnn(img1,kp1,img2,kp2,random_subset,None,flags=cv.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+    img3 = cv.drawKeypoints(img1,kp1, img2)
     plt.imshow(img3)
-    plt.title("Plot with 10 random matches")
+    plt.imshow(img4)
+    plt.title("Akaze keypoints with distance treshold 0.8")
     plt.show()
     
 
